@@ -1,1 +1,218 @@
+****** LED VIA MQTT ==== shows full status of the ZWAVE-JS-UI, red==> Driver Not Ready, yellow ==>driver ready, green ==> HA connected to Zwave-Js-Ui **********************
+****** You need an mqtt broker installed and configured somewhere in your infrastructure AND the Node-red Add-on installed and configured on HA to use this option *********
+****** Can be configured on as many Z-Net devices you want, just make sure to follow the procedure and specify the DEVICE_NAME accordingly in Node red and ZWAVW-JS-UI *****
 
+
+1- Configure MQTT on Zwave-JS-UI to log the specific driver status in MQTT
+	- Open a browser and connect to you Z-NET Zwave-JS-UI interface #<ZWAVE-JS-UI-IP>:8091
+	- Go in the configuratiuon tab (the cog wheel)
+	- Make sur that "Disable MQTT Gateway" is greyed
+	- Click on the MQTT Tab
+		- Enter a "Name" for your Z-NET gateway
+		- Fill in your MQTT Broker Ip adress in the "Hosts url"
+		- Enter your MQTT server port in "Port" # usually 1883
+		- In "Prefix" enter a unique name for this Z-net device  #***** Please note for later use*****
+		- Make sure that you select "Retain" # switch turned in blue
+		- Enter your MQTT broker "Username" and "Password" if your MQTT server requires auth
+	- Click "SAVE" at the bottom right of the page
+
+2- Configure Node-Red on Homne Assistant to log the status of the Z-Wave card in the specific Z-net
+	- Connect to your HA server, find the device corresponding to your specific Z-net device Zwave card
+		- Go in devices & services
+		- Click on the Z-wave icon
+		- Under the desired bridge, click on the devices
+		- Find the device corresponding to the Zwave card in the Z-net (probably something that has ezzee in the model field) and click on it
+		- find the device entity details by clicking on the status than on the cog wheel (ex:sensor.ezzee_status_3 in my case) # ***** note for later use ****
+	- Start the Node Red Addon on HA
+		- Copy the following:
+
+[{"id":"3f8ff68d90f074ad","type":"tab","label":"Flux 1","disabled":false,"info":"","env":[]},{"id":"e7f5aae55972280f","type":"mqtt out","z":"3f8ff68d90f074ad","name":"","topic":"","qos":"","retain":"","respTopic":"","contentType":"","userProps":"","correl":"","expiry":"","broker":"1243ae281ae5c763","x":870,"y":440,"wires":[]},{"id":"4978253042667a79","type":"server-state-changed","z":"3f8ff68d90f074ad","name":"","server":"72efb04.171835","version":5,"outputs":2,"exposeAsEntityConfig":"","entityId":"sensor.ezzee_status_3","entityIdType":"exact","outputInitially":false,"stateType":"str","ifState":"ready","ifStateType":"str","ifStateOperator":"is","outputOnlyOnStateChange":true,"for":"0","forType":"num","forUnits":"minutes","ignorePrevStateNull":false,"ignorePrevStateUnknown":false,"ignorePrevStateUnavailable":false,"ignoreCurrentStateUnknown":false,"ignoreCurrentStateUnavailable":false,"outputProperties":[{"property":"topic","propertyType":"msg","value":"DEVICE_NAME/HA/ezzee","valueType":"str"},{"property":"retain","propertyType":"msg","value":"true","valueType":"bool"}],"x":320,"y":440,"wires":[["fa98a87c3c8f8e2b"],["829cb3f05e5c4998"]]},{"id":"fa98a87c3c8f8e2b","type":"change","z":"3f8ff68d90f074ad","name":"","rules":[{"t":"set","p":"payload","pt":"msg","to":"true","tot":"str"}],"action":"","property":"","from":"","to":"","reg":false,"x":640,"y":420,"wires":[["e7f5aae55972280f"]]},{"id":"829cb3f05e5c4998","type":"change","z":"3f8ff68d90f074ad","name":"","rules":[{"t":"set","p":"payload","pt":"msg","to":"false","tot":"str"}],"action":"","property":"","from":"","to":"","reg":false,"x":640,"y":460,"wires":[["e7f5aae55972280f"]]},{"id":"1243ae281ae5c763","type":"mqtt-broker","name":"MQTT server","broker":"X.X.X.X","port":"XXXX","clientid":"","autoConnect":true,"usetls":false,"protocolVersion":"4","keepalive":"60","cleansession":true,"autoUnsubscribe":true,"birthTopic":"","birthQos":"0","birthRetain":"false","birthPayload":"","birthMsg":{},"closeTopic":"","closeQos":"0","closeRetain":"false","closePayload":"","closeMsg":{},"willTopic":"","willQos":"0","willRetain":"false","willPayload":"","willMsg":{},"userProps":"","sessionExpiry":""},{"id":"72efb04.171835","type":"server","name":"Home Assistant","addon":true,"rejectUnauthorizedCerts":true,"ha_boolean":"","connectionDelay":false,"cacheJson":false,"heartbeat":false,"heartbeatInterval":"","deviceSelector":"friendlyName","entitySelector":"friendlyName","statusSeparator":"","enableGlobalContextStore":false}]
+	
+    - In Node-red, click on the hamburger menu uop right and select "import"	
+		- In the pink window, paste the copied text above
+		- Click "Import"
+	- Adjsut the flow for your specifics:
+		- Double click on the blue box (your HA device)
+			- in server make sure you select your HA server
+			- in Entity find and select the entity we noted few minutres ago
+			- in the outpout properties replace DEVICE_NAME with the name you gave above in the "Prefix" field of the MQTT, make sure you keep the /HA/ezzee after exemple: Z-NET-House/HA/ezzee
+			- Click finish
+		- Double click the pink mqtt box
+			- Either select your MQTT server if already configured in Node-Red OR select "Add a new MQTT-Broker"
+			- If you select "Add a new MQTT-Broker"
+				- Fill your MQTT broker info; IP, Port, 
+				- Go in the security tab if your server use auth to COMPLETE user and password 
+				- Click "add"
+		- Click Deploy
+
+3- Install mosquito client on the raspberry PI
+	- Click on the terminal icon to open a terminal window
+	- Type and execute 'sudo apt install mosquitto-clients'
+
+4- Create a startup script that will lunches at every reboot and act as a daemon to track MQTT Topics 
+	- Type and execute 'sudo nano /etc/init.d/chkZNETstatus.'
+	- Cut and paste the following in the file: (this script starts a deamon and watch MQTT topics $DEVICE_NAME/driver/status AND $DEVICE_NAME/HA/ezzee)
+
+5- Create the python script that will check the mqtt topics and change LED and screen message accordingly
+  -Cut and paste the following in the file:
+
+
+from datetime import datetime
+from tkinter import * #for color status window
+from tkinter import ttk
+import time
+import paho.mqtt.client as mqtt #for mqtt client
+import sys
+GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BCM)
+
+MQTT_BROKER=“192.168.40.70” replace with yout MQTT server ip adress
+MQTT_PORT=1883 replace with yout MQTT broker IP port, usually 1883
+MQTT_USER=“mqttgoldriver” replace with yout MQTT broker User
+MQTT_PWD=“m20190107M” replace with yout MQTT broker Password
+DEVICE_NAME=“cabanon” replace with the device name you have set in the prefix field of the ZWAVE-JS-UI MQTT Tab
+
+EZZ_PIN_3=2 #ezzee pin 3 equals GPIO 2 on raspberry pi 3
+EZZ_PIN_5=3 #ezzee pin 5 equals GPIO 3 on raspberry pi 3
+EZZ_PIN_7=4 #ezzee pin 7 equals GPIO 4 on raspberry pi 3
+GPIO.setup(EZZ_PIN_3,GPIO.OUT)
+GPIO.setup(EZZ_PIN_5,GPIO.OUT)
+GPIO.setup(EZZ_PIN_7,GPIO.OUT)
+
+ZWAVE_JS_UI_DRIVER_TOPIC=DEVICE_NAME + “/driver/status”
+HA_CONNECTED_TOPIC=DEVICE_NAME + “/HA/ezzee”
+first_run=“yes”
+
+#set status window environment
+def donothing():
+pass
+#create ZNET status window
+root = Tk()
+#prevent status window being closed
+root.protocol(‘WM_DELETE_WINDOW’,donothing)
+#status window title
+root.title(“Z-Net Status”)
+#size of the status window
+root.geometry(‘350x200’)
+#enter status the window
+root.eval(‘tk::PlaceWindow . center’)
+#Configure a black background at start that can change to green,yellow and red
+root.configure(background=‘black’)
+#prevent user changing window size
+root.resizable(False, False)
+#define the zwave message label variable as tkinter StringVar
+label_Zwave=StringVar()
+#define the mqtt message label variable as tkinter StringVar
+label_MQTT=StringVar()
+
+def on_connect(client, userdata, flags, rc, properties):
+now = datetime.now()
+date_time = now.strftime(“%Y/%m/%d %H-%M-%S”)
+if rc == 0:
+label=Label(root, textvariable=label_MQTT)
+label.pack(pady=30)#create tkinter label space
+temp_status=(“MQTT Connected “+date_time)#define tkinter message
+label_MQTT.set(temp_status)#set tkinter label message
+with open(”/etc/init.d/chkZNETLEDstate.txt”, “a+”) as file:
+file.write(date_time+" MQTT Connected\n")
+else:
+label=Label(root, textvariable=label_MQTT)
+label.pack(pady=30) #create tkinter label space
+temp_status=(“MQTT NOT Connected “+date_time) #define tkinter message
+label_MQTT.set(temp_status) #set tkinter label message
+with open(”/etc/init.d/chkZNETLEDstate.txt”, “a+”) as file:
+file.write(date_time+" MQTT Not Connected\n")
+
+def on_message_from_HA(client, userdata, message):
+global HA_STATUS
+global first_run
+HA_STATUS=message.payload.decode()
+if (first_run == ‘no’):
+set_led()
+
+def on_message_from_Zwave_JS_UI(client, userdata, message):
+global ZWAVE_JS_UI_STATUS
+global first_run
+first_run=‘no’
+ZWAVE_JS_UI_STATUS=message.payload.decode()
+if (first_run == ‘no’):
+set_led()
+
+def on_message(client, userdata, message):
+print("Message Recieved from Others: "+message.payload.decode())
+
+def set_led():
+global label
+now = datetime.now()
+date_time = now.strftime(“%Y/%m/%d %H-%M-%S”)
+
+if (HA_STATUS != ‘true’ and ZWAVE_JS_UI_STATUS != ‘true’):
+#3=0, 5=1, 7=1 RED
+GPIO.output(EZZ_PIN_3,GPIO.LOW)
+GPIO.output(EZZ_PIN_5,GPIO.HIGH)
+GPIO.output(EZZ_PIN_7,GPIO.HIGH)
+label=Label(root, textvariable=label_Zwave)
+label.pack(pady=30)
+label_Zwave.set(“ZWAVE_JS_UI Not connected to Zwave card”)
+root.configure(background=‘red’)#change the status window to red
+
+if (HA_STATUS != ‘true’ and ZWAVE_JS_UI_STATUS == ‘true’):
+#3=0, 5=0, 7=1 yellow
+GPIO.output(EZZ_PIN_3,GPIO.LOW)
+GPIO.output(EZZ_PIN_5,GPIO.LOW)
+GPIO.output(EZZ_PIN_7,GPIO.HIGH)
+label=Label(root, textvariable=label_Zwave)
+label.pack(pady=30)
+label_Zwave.set(“HA NOT connected / Zwave-JS-UI connected”)
+root.configure(background=‘yellow’)#change the status window to yellow
+
+if (HA_STATUS == ‘true’ and ZWAVE_JS_UI_STATUS == ‘true’):
+#3=1, 5=0, 7=1 green
+GPIO.output(EZZ_PIN_3,GPIO.HIGH)
+GPIO.output(EZZ_PIN_5,GPIO.LOW)
+GPIO.output(EZZ_PIN_7,GPIO.HIGH)
+label=Label(root, textvariable=label_Zwave)
+label.pack(pady=30)
+label_Zwave.set(“Everything is OK”)
+root.configure(background=‘green’)#change the status window to green
+
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+client.on_connect=on_connect
+client.on_message=on_message
+client.username_pw_set(MQTT_USER, MQTT_PWD)
+client.connect(MQTT_BROKER,MQTT_PORT)
+
+#subscribe to both topics
+client.subscribe(HA_CONNECTED_TOPIC,qos=1)
+client.subscribe(ZWAVE_JS_UI_DRIVER_TOPIC,qos=1)
+client.message_callback_add(HA_CONNECTED_TOPIC, on_message_from_HA)
+client.message_callback_add(ZWAVE_JS_UI_DRIVER_TOPIC, on_message_from_Zwave_JS_UI)
+
+#client.loop_forever()
+client.loop_start()
+
+#Execute Tkinter
+root.mainloop()
+​
+
+
+  - Adjust the MQTT_BROKER, MQTT_PORT, MQTT_USER, MQTT_PWD and DEVICE_NAME to fit your specific environment
+  - Save and Close the editor ‘CTRL-X’ answer yes and then enter
+
+​6- Set the program to start at boot
+  - Type and execute ‘cd /home/pi/.config’
+  - Type and execute ‘sudo mkdir autostart’
+  - Type and execute ‘cd autostart’
+  -Type and execute ‘sudo nano showZNETstatus.desktop’
+  - Cut and paste the following in the file:
+
+[Desktop Entry]
+Encoding=UTF-8
+Type=Application
+Name=myprogram
+Exec=python3 /home/pi/chkZNETstatus.py
+Terminal=true
+
+  - Save and Close the editor ‘CTRL-X’ answer yes and then enter
+  - Type and execute ‘chmod a+r showZNETstatus.desktop’
+  - Type and execute 'reboot’​
