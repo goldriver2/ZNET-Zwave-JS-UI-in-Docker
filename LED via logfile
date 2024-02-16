@@ -1,0 +1,72 @@
+************************ LED VIA LOG ==== Only shows status of the ZWAVE-JS-UI, doesn't show if HA is connected to Zwave-JS-UI *********************
+************************ Actually, there is no way on the Raspberry to know the connect/disconnect status on the websocket connection **************
+
+************************ if you want full status, you'll need an mqtt broker installed and follow the LED via MQTT procedure ***********************
+************************ DON'T INSTALL BOTH METHOD AS YOU WILL HAVE STRANGE LED REACTION ***********************************************************
+
+if you want LED on the Ezzee board to show Controler status: (Ready==>green, Not Ready==>Red)
+1- Install swatch
+	- Click on the terminal icon to open a terminal window
+	- Type and execute ‘sudo apt-get update’
+	- Type and execute ‘sudo apt-get -y install swatch’
+2- Make sure that Log's are activated in the ZWave-JS-UI
+	- Go in settings in the ZWave-JS-UI
+	- Select 'general' tab
+	- Activale 'Log Enable' AND 'Log to file'
+	- Set 'Log Level' to 'info'
+3- Create a startup script so that swatch lunches at every reboot
+	- Type and execute 'sudo nano /etc/init.d/swatch.'
+	- Cut and paste the following in the file: (this script starts swatch as a deamon and read /opt/zwavejs-ui/store/logs/z-ui_current.log wich contains the ZWave-JS-UI log data)
+
+sudo /usr/bin/swatchdog --daemon -c /etc/swatch.conf -t /opt/zwavejs-ui/store/logs/z-ui_current.log 
+	- Save and Close the editor 'CTRL-X'  answer yes and then enter
+
+4- Make sure swatch startsup in your standard runlevels:
+	- Type and execute 'sudo chmod 755 /etc/init.d/swatch.'
+	- Type and execute 'sudo ln -s /etc/init.d/swatch. /etc/rc2.d/S99swatch.'
+	- Type and execute 'sudo ln -s /etc/init.d/swatch. /etc/rc3.d/S99swatch.'
+	- Type and execute 'sudo ln -s /etc/init.d/swatch. /etc/rc5.d/S99swatch.'
+
+5- Create a configuration file for swatch that watch for 'INFO Z-WAVE: Controller status: Driver ready' AND 'INFO Z-WAVE: Controller status: Driver not ready'
+	- Type and execute 'sudo nano /etc/swatch.conf'
+	- Cut and paste the following in the file: (this turns on the green led if controler is ready and red if not ready'
+watchfor /INFO Z-WAVE: Controller status: Driver ready/
+	echo green
+	exec /usr/bin/python3 /etc/redoff-greenon.py
+watchfor /INFO Z-WAVE: Client closed/
+        echo red
+	exec /usr/bin/python3 /etc/redon-greenoff.py
+
+	- Save and Close the editor 'CTRL-X'  answer yes and then enter
+
+6- Create a script to turn red off and green on (GPIO-2 Off GPIO-3 On)
+	- Type and execute 'sudo nano /etc/redon-greenoff.py'
+	- Cut and paste the following in the file:
+import RPi.GPIO as GPIO
+import time
+RED_LED_PIN=2
+GREEN_LED_PIN=3
+GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)
+GPIO.setup(RED_LED_PIN,GPIO.OUT)
+GPIO.output(RED_LED_PIN,GPIO.LOW)
+GPIO.setup(GREEN_LED_PIN,GPIO.OUT)
+GPIO.output(GREEN_LED_PIN,GPIO.HIGH)
+	- Save and Close the editor 'CTRL-X'  answer yes and then enter
+
+7- Create a script to turn green off and red on (GPIO-2 On GPIO-3 Off)
+	- Type and execute 'sudo nano /etc/redoff-greenon.py'
+	- Cut and paste the following in the file:
+import RPi.GPIO as GPIO
+import time
+RED_LED_PIN=2
+GREEN_LED_PIN=3
+GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)
+GPIO.setup(RED_LED_PIN,GPIO.OUT)
+GPIO.output(RED_LED_PIN,GPIO.HIGH)
+GPIO.setup(GREEN_LED_PIN,GPIO.OUT)
+GPIO.output(GREEN_LED_PIN,GPIO.LOW)
+	- Save and Close the editor 'CTRL-X'  answer yes and then enter
+
+8- Reboot your RPI
