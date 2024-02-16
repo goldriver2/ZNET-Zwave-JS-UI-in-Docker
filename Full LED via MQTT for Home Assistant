@@ -1,4 +1,4 @@
-****** LED VIA MQTT ==== shows full status of the ZWAVE-JS-UI, red==> Driver Not Ready, yellow ==>driver ready, green ==> HA connected to Zwave-Js-Ui **********************
+#****** LED VIA MQTT ==== shows full status of the ZWAVE-JS-UI, red==> Driver Not Ready, yellow ==>driver ready, green ==> HA connected to Zwave-Js-Ui **********************
 ****** You need an mqtt broker installed and configured somewhere in your infrastructure AND the Node-red Add-on installed and configured on HA to use this option *********
 ****** Can be configured on as many Z-Net devices you want, just make sure to follow the procedure and specify the DEVICE_NAME accordingly in Node red and ZWAVW-JS-UI *****
 
